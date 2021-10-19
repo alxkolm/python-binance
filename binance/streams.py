@@ -10,6 +10,7 @@ from socket import gaierror
 from typing import Optional, List, Dict, Callable, Any
 
 import websockets as ws
+import websockets.connection
 from websockets.exceptions import ConnectionClosedError
 
 from .client import AsyncClient
@@ -131,10 +132,10 @@ class ReconnectingWebsocket:
                         break
                     elif self.ws_state == WSListenerState.EXITING:
                         break
-                    elif self.ws.state == ws.protocol.State.CLOSING:
+                    elif self.ws.state == websockets.connection.State.CLOSING:
                         await asyncio.sleep(0.1)
                         continue
-                    elif self.ws.state == ws.protocol.State.CLOSED:
+                    elif self.ws.state == websockets.connection.State.CLOSED:
                         await self._reconnect()
                     elif self.ws_state == WSListenerState.STREAMING:
                         res = await asyncio.wait_for(self.ws.recv(), timeout=self.TIMEOUT)
@@ -151,7 +152,8 @@ class ReconnectingWebsocket:
                                 raise BinanceWebsocketUnableToConnect
                 except asyncio.TimeoutError:
                     self._log.debug(f"no message in {self.TIMEOUT} seconds")
-                    # _no_message_received_reconnect
+                    if self.ws.closed:
+                        await self._reconnect()
                 except asyncio.CancelledError as e:
                     self._log.debug(f"cancelled error {e}")
                     break
@@ -159,6 +161,7 @@ class ReconnectingWebsocket:
                     self._log.debug(f"incomplete read error ({e})")
                 except ConnectionClosedError as e:
                     self._log.debug(f"connection close error ({e})")
+                    await self._reconnect()
                 except gaierror as e:
                     self._log.debug(f"DNS Error ({e})")
                 except BinanceWebsocketUnableToConnect as e:
