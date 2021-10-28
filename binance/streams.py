@@ -47,6 +47,7 @@ class ReconnectingWebsocket:
     def __init__(
         self, loop, url: str, path: Optional[str] = None, prefix: str = 'ws/', is_binary: bool = False, exit_coro=None
     ):
+        self.timeout_counter = 0
         self._loop = loop or asyncio.get_event_loop()
         self._log = logging.getLogger(__name__)
         self._path = path
@@ -149,9 +150,14 @@ class ReconnectingWebsocket:
                                     'm': 'Queue overflow. Message not filled'
                                 })
                                 raise BinanceWebsocketUnableToConnect
+                        self.timeout_counter = 0
                 except asyncio.TimeoutError:
-                    self._log.debug(f"no message in {self.TIMEOUT} seconds")
-                    # _no_message_received_reconnect
+                    self._log.debug(f"no message in {self.TIMEOUT} seconds. Websocket state {self.ws.state}")
+                    self.timeout_counter += 1
+                    if self.ws.closed or self.timeout_counter > 10:
+                        self.timeout_counter = 0
+                        self._log.warning("Too many timeouts. Force restart")
+                        await self._reconnect()
                 except asyncio.CancelledError as e:
                     self._log.debug(f"cancelled error {e}")
                     break
